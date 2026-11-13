@@ -16,6 +16,14 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
   library has to be rebuilt. See `INSTALL.md` for more details. (#432)
 
 ### Fixed ###
+- The `openat2` and emulated `O_PATH` resolvers could disagree about the
+  partial lookup result (the returned handle and remaining path) when doing a
+  `no_follow_trailing` partial resolution of paths containing symlinks with
+  absolute targets, nested `..` components, or trailing slashes. The walk-back
+  logic in the `openat2` resolver now only applies `no_follow_trailing` to the
+  final component of the full path (matching the emulated `O_PATH` resolver),
+  so both resolvers have the same fail-closed behaviour and remaining-path
+  semantics.
 - Due to some unfortunate type usage in `libc` and `rustix`, libpathrs would
   previously fail to build on s390x with musl. We've worked around that issue
   by casting all `f_type` values to `u64` (though [we believe it to be an

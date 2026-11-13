@@ -131,7 +131,13 @@ pub(crate) fn resolve_partial(
             // being exploited to return some result to Root::mkdir_all).
             return Err(last_error);
         }
-        match resolve(root, path, rflags, no_follow_trailing) {
+        // The trailing component of each ancestor prefix is an intermediate
+        // component of the full path, so we must always follow symlinks here
+        // (no_follow_trailing only applies to the final component of the full
+        // path). Otherwise a no_follow_trailing lookup would treat a symlink
+        // in the middle of the path as a valid "partial" result, which does
+        // not match the behaviour of the O_PATH resolver.
+        match resolve(root, path, rflags, false) {
             Ok(handle) => {
                 return Ok(PartialLookup::Partial {
                     handle,

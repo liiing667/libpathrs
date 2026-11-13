@@ -134,7 +134,7 @@ macro_rules! resolve_race_tests {
         paste::paste! {
             resolve_race_tests! {
                 [tests_common::create_race_tree().context("create race tree")?]
-                fn [<$op_name _ $test_name>](mut root: Root) {
+                fn $test_name(mut root: Root) {
                     root.set_resolver_flags($rflags);
 
                     thread::scope(|s| -> Result<_, Error> {
@@ -329,6 +329,99 @@ resolve_race_tests! {
             Ok(PartialLookup::Partial {
                 handle: ("/a/b/c", libc::S_IFDIR),
                 remaining: "../c/d/e".into(),
+                last_error: ErrorKind::OsError(Some(libc::ENOENT)),
+            }),
+            Ok(PartialLookup::Partial {
+                handle: ("/a", libc::S_IFDIR),
+                remaining: "b/c/d/e".into(),
+                last_error: ErrorKind::OsError(Some(libc::ENOENT)),
+            }),
+        };
+        // A trailing slash must not change the partial position nor the
+        // remaining path semantics between the openat2 and opath backends.
+        trailing_slash: resolve_partial("/a/b/c/d/e/") => {
+            // Breakout detected.
+            Err(ErrorKind::SafetyViolation),
+            // We successfully resolved the path as if there wasn't a race.
+            Ok(PartialLookup::Partial {
+                handle: ("/a/b/c/d", libc::S_IFDIR),
+                remaining: "e".into(),
+                last_error: ErrorKind::OsError(Some(libc::ENOENT)),
+            }),
+            // There was a race during the walk-back logic, which resulted in an
+            // error but then the path was replaced back when walking back to
+            // find the "last good" path.
+            Ok(PartialLookup::Partial {
+                handle: ("/a/b/c", libc::S_IFDIR),
+                remaining: "d/e".into(),
+                last_error: ErrorKind::OsError(Some(libc::ENOENT)),
+            }),
+            Ok(PartialLookup::Partial {
+                handle: ("/a/b", libc::S_IFDIR),
+                remaining: "c/d/e".into(),
+                last_error: ErrorKind::OsError(Some(libc::ENOENT)),
+            }),
+            Ok(PartialLookup::Partial {
+                handle: ("/a", libc::S_IFDIR),
+                remaining: "b/c/d/e".into(),
+                last_error: ErrorKind::OsError(Some(libc::ENOENT)),
+            }),
+        };
+        // no_follow_trailing must only apply to the final component of the
+        // full path -- intermediate symlinks (such as a swapped-in "b-link")
+        // must still be followed by both backends, so that the partial
+        // position and remaining path are consistent.
+        nofollow: resolve_partial("/a/b/c/d/e", no_follow_trailing = true) => {
+            // Breakout detected.
+            Err(ErrorKind::SafetyViolation),
+            // We successfully resolved the path as if there wasn't a race.
+            Ok(PartialLookup::Partial {
+                handle: ("/a/b/c/d", libc::S_IFDIR),
+                remaining: "e".into(),
+                last_error: ErrorKind::OsError(Some(libc::ENOENT)),
+            }),
+            // There was a race during the walk-back logic, which resulted in an
+            // error but then the path was replaced back when walking back to
+            // find the "last good" path.
+            Ok(PartialLookup::Partial {
+                handle: ("/a/b/c", libc::S_IFDIR),
+                remaining: "d/e".into(),
+                last_error: ErrorKind::OsError(Some(libc::ENOENT)),
+            }),
+            Ok(PartialLookup::Partial {
+                handle: ("/a/b", libc::S_IFDIR),
+                remaining: "c/d/e".into(),
+                last_error: ErrorKind::OsError(Some(libc::ENOENT)),
+            }),
+            Ok(PartialLookup::Partial {
+                handle: ("/a", libc::S_IFDIR),
+                remaining: "b/c/d/e".into(),
+                last_error: ErrorKind::OsError(Some(libc::ENOENT)),
+            }),
+        };
+        // The combination of a trailing slash and no_follow_trailing (with
+        // nested ".." components from the swapped-in symlink target) must
+        // also agree between backends.
+        nofollow_trailing_slash: resolve_partial("/a/b/c/d/e//", no_follow_trailing = true) => {
+            // Breakout detected.
+            Err(ErrorKind::SafetyViolation),
+            // We successfully resolved the path as if there wasn't a race.
+            Ok(PartialLookup::Partial {
+                handle: ("/a/b/c/d", libc::S_IFDIR),
+                remaining: "e".into(),
+                last_error: ErrorKind::OsError(Some(libc::ENOENT)),
+            }),
+            // There was a race during the walk-back logic, which resulted in an
+            // error but then the path was replaced back when walking back to
+            // find the "last good" path.
+            Ok(PartialLookup::Partial {
+                handle: ("/a/b/c", libc::S_IFDIR),
+                remaining: "d/e".into(),
+                last_error: ErrorKind::OsError(Some(libc::ENOENT)),
+            }),
+            Ok(PartialLookup::Partial {
+                handle: ("/a/b", libc::S_IFDIR),
+                remaining: "c/d/e".into(),
                 last_error: ErrorKind::OsError(Some(libc::ENOENT)),
             }),
             Ok(PartialLookup::Partial {
