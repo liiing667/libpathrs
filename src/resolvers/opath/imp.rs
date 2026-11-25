@@ -151,7 +151,7 @@ fn check_current(
 // checking this for every symlink lookup is more likely to be an issue.
 // MSRV(1.80): Use LazyLock.
 static PROTECTED_SYMLINKS_SYSCTL: Lazy<u32> = Lazy::new(|| {
-    let procfs = ProcfsHandle::new().expect("should be able to get a procfs handle");
+    let procfs = ProcfsHandle::new_safe().expect("should be able to get a procfs handle");
     utils::sysctl_read_parse(&procfs, "fs.protected_symlinks")
         // In container workloads, /proc/sys might be overmounted as read-only
         // and we really don't want to fail in this case so we just assume that
@@ -229,7 +229,7 @@ fn do_resolve(
     mut symlink_stack: Option<&mut SymlinkStack<OwnedFd>>,
 ) -> Result<PartialLookup<Rc<OwnedFd>>, Error> {
     // We always need procfs for validation when using this resolver.
-    let procfs = ProcfsHandle::new()?;
+    let procfs = ProcfsHandle::new_safe()?;
 
     // What is the final path we expect to get after we do the final open? This
     // allows us to track any attacker moving path components around and we can

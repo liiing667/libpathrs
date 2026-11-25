@@ -210,7 +210,7 @@ impl HandleRef<'_> {
     #[doc(alias = "pathrs_reopen")]
     pub fn reopen(&self, flags: impl Into<OpenFlags>) -> Result<File, Error> {
         self.inner
-            .reopen(&ProcfsHandle::new()?, flags.into())
+            .reopen(&ProcfsHandle::new_safe()?, flags.into())
             .map(File::from)
     }
 

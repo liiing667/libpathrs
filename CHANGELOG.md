@@ -16,6 +16,14 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
   library has to be rebuilt. See `INSTALL.md` for more details. (#432)
 
 ### Fixed ###
+- After a cached `ProcfsHandle` was invalidated, subsequent safe path
+  resolution could silently downgrade to an unsafe host `/proc` handle. In
+  environments where safe mount creation is unavailable, attackers able to
+  manipulate that host mount could confuse the procfs-based containment check
+  and cause the caller to access a file outside the requested root. The
+  affected security-critical paths now only use detached procfs mounts after
+  cache invalidation, while ordinary procfs browsing and valid subpath lookups
+  continue to work whenever a safe replacement mount can be created.
 - Due to some unfortunate type usage in `libc` and `rustix`, libpathrs would
   previously fail to build on s390x with musl. We've worked around that issue
   by casting all `f_type` values to `u64` (though [we believe it to be an

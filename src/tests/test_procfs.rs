@@ -36,9 +36,10 @@ use crate::{
     error::ErrorKind,
     flags::OpenFlags,
     procfs::{ProcfsBase, ProcfsHandle, ProcfsHandleBuilder},
-    resolvers::procfs::ProcfsResolver,
+    resolvers::{procfs::ProcfsResolver, ResolverBackend},
     syscalls,
     tests::common as tests_common,
+    Root,
 };
 use utils::ExpectedResult;
 
@@ -387,11 +388,56 @@ fn procfs_dead_cached_handle() -> Result<(), Error> {
         procfs
             .open(ProcfsBase::ProcSelf, ".", OpenFlags::O_PATH)
             .context("open /proc/self with replacement procfs handle")?;
+        procfs
+            .open(ProcfsBase::ProcSelf, "status", OpenFlags::O_RDONLY)
+            .context("open a regular procfs subpath with replacement procfs handle")?;
+        assert!(
+            procfs.is_detached,
+            "replacement procfs handles must remain detached after cache invalidation"
+        );
+        assert!(
+            !procfs.is_subset
+                || procfs
+                    .open(ProcfsBase::ProcRoot, "filesystems", OpenFlags::O_RDONLY)
+                    .is_err(),
+            "subset=pid procfs must continue to mask non-PID files"
+        );
         assert!(
             procfs.into_owned_fd().is_some(),
             "handles created after the cache was invalidated should not be cached"
         );
     }
+    Ok(())
+}
+
+// The emulated O_PATH resolver depends on ProcfsHandle for its final
+// containment check. Make sure corruption of the cached procfs handle cannot
+// make it downgrade to an unsafe host /proc while resolving an ordinary root.
+#[test]
+#[cfg_attr(not(nextest), ignore)] // needs one-process-per-test scheme
+fn emulated_resolver_after_dead_cached_handle() -> Result<(), Error> {
+    let procfs = ProcfsHandleBuilder::new()
+        .build()
+        .context("get cached procfs handle")?;
+    let cached_fd = procfs.as_fd().as_raw_fd();
+    if procfs.into_owned_fd().is_some() {
+        eprintln!("procfs handle is not cached (missing privileges?)");
+        return Ok(());
+    }
+
+    // SAFETY: This deliberately violates I/O safety in an isolated test to
+    // emulate runc closing all inherited file descriptors.
+    unsafe { rustix_io::close(cached_fd) };
+
+    let root_dir = tempfile::tempdir().context("create temporary root")?;
+    std::fs::write(root_dir.path().join("file"), b"test data")
+        .context("create file in temporary root")?;
+
+    let mut root = Root::open(root_dir.path()).context("Root::open")?;
+    root.set_resolver_backend(ResolverBackend::EmulatedOpath);
+    root.resolve("file")
+        .context("ordinary O_PATH lookup must still work with a replacement procfs handle")?;
+
     Ok(())
 }
 

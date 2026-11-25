@@ -115,7 +115,7 @@ pub extern "C" fn pathrs_reopen(fd: CBorrowedFd<'_>, flags: u64) -> RawFd {
 
     || -> Result<_, Error> {
         fd.try_as_borrowed_fd()?
-            .reopen(&ProcfsHandle::new()?, flags)
+            .reopen(&ProcfsHandle::new_safe()?, flags)
     }()
     .into_c_return()
 }

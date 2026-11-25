@@ -335,9 +335,16 @@ impl ProcfsHandleBuilder {
     /// To avoid negatively impacting downstream projects, as a final safety
     /// mechanism if the cached [`ProcfsHandle`] does become invalidated,
     /// [`build`][Self::build] will refuse to use it and will always create new
-    /// handles. Users are still strongly recommended to not fiddle with file
-    /// descriptors in that way (unless absolutely necessary).
+    /// handles. If no detached procfs mount can be created after such an
+    /// invalidation, [`build`][Self::build] returns an error rather than
+    /// silently falling back to an unsafe host `/proc` handle. Users are still
+    /// strongly recommended to not fiddle with file descriptors in that way
+    /// (unless absolutely necessary).
     pub fn build(self) -> Result<ProcfsHandle, Error> {
+        self.build_inner(true)
+    }
+
+    fn build_inner(self, allow_unsafe_open: bool) -> Result<ProcfsHandle, Error> {
         // MSRV(1.70): Use std::sync::OnceLock.
         static CACHED_PROCFS_HANDLE: OnceLock<OwnedFd> = OnceLock::new();
         static CACHED_HANDLE_IS_BAD: OnceLock<()> = OnceLock::new();
@@ -376,11 +383,26 @@ impl ProcfsHandleBuilder {
             }
         }
 
-        let procfs = ProcfsHandle::new_fsopen(self.subset_pid)
-            .or_else(|_| ProcfsHandle::new_open_tree(OpenTreeFlags::empty()))
-            .or_else(|_| ProcfsHandle::new_open_tree(OpenTreeFlags::AT_RECURSIVE))
-            .or_else(|_| ProcfsHandle::new_unsafe_open())
-            .wrap("get safe procfs handle")?;
+        let procfs = {
+            let safe_procfs = ProcfsHandle::new_fsopen(self.subset_pid)
+                .or_else(|_| ProcfsHandle::new_open_tree(OpenTreeFlags::empty()))
+                .or_else(|_| ProcfsHandle::new_open_tree(OpenTreeFlags::AT_RECURSIVE));
+
+            match (safe_procfs, allow_unsafe_open && !is_cached_handle_bad()) {
+                (Ok(procfs), _) => procfs,
+                // The plain open(2) fallback uses the host's /proc and cannot
+                // protect lookups from racing overmounts. Once the cached
+                // handle has been invalidated, do not silently downgrade to
+                // this weaker mode for the default (safe) builder: callers
+                // would otherwise get a ProcfsHandle that looks ordinary but
+                // can be tricked into resolving subpaths outside the intended
+                // root.
+                (Err(err), false) => {
+                    Err(err).wrap("get safe procfs handle (unsafe /proc fallback disabled)")?
+                }
+                (Err(_), true) => ProcfsHandle::new_unsafe_open().wrap("get procfs handle")?,
+            }
+        };
 
         // TODO: Add a way to require/verify that the requested properties will
         // be set, and then check them here before returning.
@@ -546,9 +568,7 @@ impl<'fd> ProcfsHandleRef<'fd> {
                     // If the trial lookup failed due to ENOENT and the current
                     // procfs handle is "masked" in some way, try to create a
                     // temporary unmasked handle and retry the operation.
-                    return ProcfsHandleBuilder::new()
-                        .unmasked()
-                        .build()
+                    return ProcfsHandle::new_safe_unmasked()
                         // Use the old error if creating a new handle failed.
                         .or(Err(err))?
                         .open_follow(base, subpath, oflags);
@@ -675,9 +695,7 @@ impl<'fd> ProcfsHandleRef<'fd> {
                     // If the lookup failed due to ENOENT, and the current
                     // procfs handle is "masked" in some way, try to create a
                     // temporary unmasked handle and retry the operation.
-                    ProcfsHandleBuilder::new()
-                        .unmasked()
-                        .build()
+                    ProcfsHandle::new_safe_unmasked()
                         // Use the old error if creating a new handle failed.
                         .or(Err(err))?
                         .open(base, subpath, oflags)
@@ -953,6 +971,10 @@ impl ProcfsHandle {
 
     /// Create a new handle that references a safe `/proc`.
     ///
+    /// If the process-wide cached handle has been corrupted, this constructor
+    /// only retries with detached procfs mounts. It never silently downgrades
+    /// to a plain `open("/proc")` handle in that state.
+    ///
     /// This method is just short-hand for:
     ///
     /// ```rust
@@ -962,6 +984,22 @@ impl ProcfsHandle {
     /// ```
     pub fn new() -> Result<Self, Error> {
         ProcfsHandleBuilder::new().subset_pid(true).build()
+    }
+
+    /// Build a handle without using the unsafe plain `open("/proc")`
+    /// fallback. This is used by internal security-critical code paths that
+    /// cannot safely operate against an overmounted host `/proc`.
+    pub(crate) fn new_safe() -> Result<Self, Error> {
+        ProcfsHandleBuilder::new()
+            .subset_pid(true)
+            .build_inner(false)
+    }
+
+    /// Like [`ProcfsHandle::new_safe`], but permits access to the non-PID
+    /// procfs files. The returned handle is still based on a detached procfs
+    /// mount rather than the potentially-overmounted host `/proc`.
+    pub(crate) fn new_safe_unmasked() -> Result<Self, Error> {
+        ProcfsHandleBuilder::new().unmasked().build_inner(false)
     }
 
     /// Try to convert a regular [`File`] handle to a [`ProcfsHandle`]. This
