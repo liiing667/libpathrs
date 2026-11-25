@@ -634,6 +634,46 @@ mod tests {
     }
 
     #[test]
+    fn reopen_symlink_fd_remains_blocked_after_rename() -> Result<(), Error> {
+        let tmpdir = TempDir::new()?;
+        let target = tmpdir.path().join("target");
+        File::create(&target)?;
+
+        let link = tmpdir.path().join("link");
+        std::os::unix::fs::symlink("target", &link)?;
+
+        let link_fd = syscalls::openat(syscalls::AT_FDCWD, &link, OpenFlags::O_PATH, 0)?;
+        let procfs = ProcfsHandle::new()?;
+
+        let err = link_fd
+            .reopen(&procfs, OpenFlags::O_RDONLY)
+            .expect_err("reopening a symlink handle should fail");
+        assert_eq!(
+            err.kind(),
+            crate::error::ErrorKind::OsError(Some(libc::ELOOP)),
+            "symlink handle reopen should return ELOOP"
+        );
+
+        // Renaming the link and occupying its old name with another inode must
+        // not turn the already-opened symlink handle into a way to reopen the
+        // replacement node. The fd still references the original symlink.
+        let renamed_link = tmpdir.path().join("link.old");
+        std::fs::rename(&link, &renamed_link)?;
+        File::create(&link)?;
+
+        let err = link_fd
+            .reopen(&procfs, OpenFlags::O_RDONLY)
+            .expect_err("reopening a renamed symlink handle should still fail");
+        assert_eq!(
+            err.kind(),
+            crate::error::ErrorKind::OsError(Some(libc::ELOOP)),
+            "renamed symlink handle reopen should still return ELOOP"
+        );
+
+        Ok(())
+    }
+
+    #[test]
     fn is_magiclink_filesystem() {
         assert!(
             !File::open("/")

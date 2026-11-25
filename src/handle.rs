@@ -105,7 +105,14 @@ impl Handle {
     /// 2. `ioctl(fd, TIOCSCTTY, 0)` will set the fd as the controlling terminal
     ///    (if you don't have one already, and the fd references a TTY).
     ///
+    /// Reopening a file descriptor that directly references a symlink (for
+    /// example, one returned by [`Root::resolve_nofollow`]) is rejected with
+    /// `ELOOP`. Such an fd cannot be reopened unambiguously through
+    /// `/proc/self/fd`; use [`Handle::try_clone`] if you only need another
+    /// reference to the same descriptor.
+    ///
     /// [`Root::create`]: crate::Root::create
+    /// [`Root::resolve_nofollow`]: crate::Root::resolve_nofollow
     #[doc(alias = "pathrs_reopen")]
     #[inline]
     pub fn reopen(&self, flags: impl Into<OpenFlags>) -> Result<File, Error> {
