@@ -409,6 +409,10 @@ root_op_tests! {
     root_dot_trailing_slash: mkfile("./", 0o755) => Err(ErrorKind::InvalidArgument);
     root_dotdot: mkfile("..", 0o755) => Err(ErrorKind::InvalidArgument);
     root_dotdot_trailing_slash: mkfile("../", 0o755) => Err(ErrorKind::InvalidArgument);
+    uid40633_missing_parent: mkfile("uid40633-missing-parent/tenant", 0o644) => Err(ErrorKind::OsError(Some(libc::ENOENT)));
+    uid40633_escape_link_parent: mkfile("escape-link1/../uid40633-file", 0o644) => Ok(("uid40633-file", libc::S_IFREG | 0o644));
+    uid40633_escape_link_dot_basename: mkfile("escape-link1/.", 0o644) => Err(ErrorKind::InvalidArgument);
+    uid40633_escape_link_dotdot_basename: mkfile("escape-link1/..", 0o644) => Err(ErrorKind::InvalidArgument);
 
     plain: mkdir("abc", 0o311) => Ok(("abc", libc::S_IFDIR | 0o311));
     exist_file: mkdir("b/c/file", 0o444) => Err(ErrorKind::OsError(Some(libc::EEXIST)));
@@ -428,6 +432,10 @@ root_op_tests! {
     root_dot_trailing_slash: mkdir("./", 0o755) => Err(ErrorKind::InvalidArgument);
     root_dotdot: mkdir("..", 0o755) => Err(ErrorKind::InvalidArgument);
     root_dotdot_trailing_slash: mkdir("../", 0o755) => Err(ErrorKind::InvalidArgument);
+    uid40633_escape_link_child: mkdir("escape-link1/tenant", 0o755) => Ok(("target/tenant", libc::S_IFDIR | 0o755));
+    uid40633_nested_parent_dotdot: mkdir("escape-link1/../uid40633-dir", 0o755) => Ok(("uid40633-dir", libc::S_IFDIR | 0o755));
+    uid40633_escape_link_dot_basename: mkdir("escape-link1/.", 0o755) => Err(ErrorKind::InvalidArgument);
+    uid40633_escape_link_dotdot_basename: mkdir("escape-link1/..", 0o755) => Err(ErrorKind::InvalidArgument);
 
     plain: symlink("abc", "/NEWLINK") => Ok(("abc", libc::S_IFLNK | 0o777));
     exist_file: symlink("b/c/file", "/NEWLINK") => Err(ErrorKind::OsError(Some(libc::EEXIST)));
@@ -880,6 +888,8 @@ root_op_tests! {
     dangling3_dotdot: mkdir_all("a-fake3/../bar/baz", 0o711) => Err(ErrorKind::OsError(Some(libc::ENOENT)));
     // Non-lexical symlinks should work.
     nonlexical_basic: mkdir_all("target/foo", 0o711) => Ok(());
+    uid40633_escape_link_tenant: mkdir_all("escape-link1/tenants/alice/data", 0o711) => Ok(());
+    uid40633_nested_parent: mkdir_all("b/c/../uid40633-tree/tenant", 0o711) => Ok(());
     nonlexical_level1_abs: mkdir_all("link1/target_abs/foo", 0o711) => Ok(());
     nonlexical_level1_rel: mkdir_all("link1/target_rel/foo", 0o711) => Ok(());
     nonlexical_level2_abs_abs: mkdir_all("link2/link1_abs/target_abs/foo", 0o711) => Ok(());

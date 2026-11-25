@@ -131,7 +131,14 @@ pub(crate) fn resolve_partial(
             // being exploited to return some result to Root::mkdir_all).
             return Err(last_error);
         }
-        match resolve(root, path, rflags, no_follow_trailing) {
+        // Each ancestor prefix is looked up as the parent of the missing
+        // remainder. Its trailing component is therefore an intermediate
+        // component of the original path, even when the caller asked for
+        // no_follow_trailing on the final component. Passing the flag down
+        // here can return an O_PATH handle for an intermediate symlink as if
+        // it were a resolved directory, which disagrees with the opath
+        // backend and can make a partial lookup look usable as a parent.
+        match resolve(root, path, rflags, false) {
             Ok(handle) => {
                 return Ok(PartialLookup::Partial {
                     handle,

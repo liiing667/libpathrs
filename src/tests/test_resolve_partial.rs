@@ -658,6 +658,11 @@ resolve_tests! {
         symlink_nofollow: resolve_partial("link3/target_abs", no_follow_trailing = true) => Ok(PartialLookup::Complete(("link3/target_abs", libc::S_IFLNK)));
         symlink_component_nofollow1: resolve_partial("e/f", no_follow_trailing = true) => Ok(PartialLookup::Complete(("b/c/d/e/f", libc::S_IFDIR)));
         symlink_component_nofollow2: resolve_partial("link2/link1_abs/target_rel", no_follow_trailing = true) => Ok(PartialLookup::Complete(("link1/target_rel", libc::S_IFLNK)));
+        uid40633_nofollow_intermediate_parent: resolve_partial("link2/link1_abs/target_rel/foo", no_follow_trailing = true) => Ok(PartialLookup::Partial {
+            handle: ("target", libc::S_IFDIR),
+            remaining: "foo".into(),
+            last_error: ErrorKind::OsError(Some(libc::ENOENT)),
+        });
         loop_nofollow: resolve_partial("loop/link", no_follow_trailing = true) => Ok(PartialLookup::Complete(("loop/link", libc::S_IFLNK)));
         // RESOLVE_NO_SYMLINKS.
         dir_nosym: resolve_partial("b/c/d/e", rflags = NO_SYMLINKS) => Ok(PartialLookup::Complete(("b/c/d/e", libc::S_IFDIR)));

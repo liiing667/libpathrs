@@ -784,6 +784,11 @@ impl RootRef<'_> {
     /// to decide what the correct handling of `trailing_slash` is (but if it is
     /// ignored by the caller then trailing slashes will be ignored wholesale).
     ///
+    /// `name` is [`None`] for `/`, `.`, and `..` after trailing-slash
+    /// normalization. In that case `dir` is the root handle, not a regular
+    /// parent plus an empty basename; callers that require a real basename must
+    /// reject [`None`] before issuing a directory operation.
+    ///
     /// If you expect the target path to exist already, then
     /// [`resolve_exists_parent`] may be more suitable.
     ///
@@ -1126,7 +1131,8 @@ impl RootRef<'_> {
         let (handle, remaining) = self
             .resolver
             .resolve_partial(self, path, false)
-            .and_then(TryInto::try_into)?;
+            .and_then(TryInto::try_into)
+            .wrap("resolve existing path prefix for mkdir_all")?;
 
         // Re-open the handle with O_DIRECTORY to make sure it's a directory we
         // can use as well as to make sure we return an O_DIRECTORY regardless

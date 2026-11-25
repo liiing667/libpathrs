@@ -16,6 +16,11 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
   library has to be rebuilt. See `INSTALL.md` for more details. (#432)
 
 ### Fixed ###
+- The `openat2` partial resolver no longer applies `no_follow_trailing` to
+  ancestor prefixes while searching for the last existing component. The flag
+  now applies only to the final component of the requested path, matching the
+  emulated `O_PATH` resolver and preventing an intermediate symlink handle
+  from being returned as though it were a usable parent directory.
 - Due to some unfortunate type usage in `libc` and `rustix`, libpathrs would
   previously fail to build on s390x with musl. We've worked around that issue
   by casting all `f_type` values to `u64` (though [we believe it to be an
