@@ -692,6 +692,44 @@ resolve_tests! {
             remaining: "foo".into(),
             last_error: ErrorKind::OsError(Some(libc::ENOENT)),
         });
+        // Equivalent combinations of no-op ".." components with "//" and
+        // trailing slashes must leave both resolver backends at the same
+        // prefix and with the same remaining path.
+        uid40634_noop_dotdot_double_slash: resolve_partial("escape-link1//foo") => Ok(PartialLookup::Partial {
+            handle: ("target", libc::S_IFDIR),
+            remaining: "foo".into(),
+            last_error: ErrorKind::OsError(Some(libc::ENOENT)),
+        });
+        uid40634_noop_dotdot_root_prefix: resolve_partial("escape-link1/..//missing") => Ok(PartialLookup::Partial {
+            handle: ("", libc::S_IFDIR),
+            remaining: "missing".into(),
+            last_error: ErrorKind::OsError(Some(libc::ENOENT)),
+        });
+        uid40634_noop_dotdot_consecutive_root: resolve_partial("escape-link1//..//..//missing//") => Ok(PartialLookup::Partial {
+            handle: ("", libc::S_IFDIR),
+            remaining: "missing//".into(),
+            last_error: ErrorKind::OsError(Some(libc::ENOENT)),
+        });
+        uid40634_abs_noop_dotdot_consecutive_root: resolve_partial("escape-link2//..//..//missing//") => Ok(PartialLookup::Partial {
+            handle: ("", libc::S_IFDIR),
+            remaining: "missing//".into(),
+            last_error: ErrorKind::OsError(Some(libc::ENOENT)),
+        });
+        uid40634_noop_dotdot_target_reentry: resolve_partial("escape-link1/..//target//missing//") => Ok(PartialLookup::Partial {
+            handle: ("target", libc::S_IFDIR),
+            remaining: "missing//".into(),
+            last_error: ErrorKind::OsError(Some(libc::ENOENT)),
+        });
+        uid40634_trailing_missing_slashes: resolve_partial("escape-link1/foo//") => Ok(PartialLookup::Partial {
+            handle: ("target", libc::S_IFDIR),
+            remaining: "foo//".into(),
+            last_error: ErrorKind::OsError(Some(libc::ENOENT)),
+        });
+        uid40634_trailing_nondir_slashes: resolve_partial("escape-link1//file///") => Ok(PartialLookup::Partial {
+            handle: ("target/file", libc::S_IFREG),
+            remaining: "//".into(),
+            last_error: ErrorKind::OsError(Some(libc::ENOTDIR)),
+        });
     }
 }
 

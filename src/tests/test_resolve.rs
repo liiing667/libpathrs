@@ -328,6 +328,12 @@ resolve_tests! {
         complete_dir1: resolve("a") => Ok(("/a", libc::S_IFDIR));
         complete_dir2: resolve("b/c/d/e/f") => Ok(("/b/c/d/e/f", libc::S_IFDIR));
         complete_dir3: resolve("b///././c////.//d/./././///e////.//./f//././././") => Ok(("/b/c/d/e/f", libc::S_IFDIR));
+        // Consecutive ".." and empty ("//") components must not change the
+        // resolved object or let the no-op root ".." handling disagree with
+        // the ordinary lexical path walk.
+        uid40634_relative_dotdot_slashes: resolve("b/c/../..//target/./") => Ok(("/target", libc::S_IFDIR));
+        uid40634_noop_dotdot_slashes_rel: resolve("escape-link1//..//..//target//file") => Ok(("/target/file", libc::S_IFREG));
+        uid40634_noop_dotdot_slashes_abs: resolve("escape-link2//..//..//target//file") => Ok(("/target/file", libc::S_IFREG));
         complete_file: resolve("b/c/file") => Ok(("/b/c/file", libc::S_IFREG));
         complete_file_link: resolve("b-file") => Ok(("/b/c/file", libc::S_IFREG));
         complete_fifo: resolve("b/fifo") => Ok(("/b/fifo", libc::S_IFIFO));

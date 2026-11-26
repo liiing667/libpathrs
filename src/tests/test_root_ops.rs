@@ -861,6 +861,11 @@ root_op_tests! {
     dotdot_in_nonexisting: mkdir_all("a/b/c/d/e/f/g/h/i/j/k/../lmnop", 0o711) => Err(ErrorKind::OsError(Some(libc::ENOENT)));
     dotdot_in_existing: mkdir_all("b/c/../c/./d/e/f/g/h", 0o711) => Ok(());
     dotdot_after_symlink: mkdir_all("e/../dd/ee/ff", 0o711) => Ok(());
+    // Combinations of no-op ".." components, "//", and trailing slashes must
+    // leave mkdir_all's partial parent inside the declared root.
+    uid40634_relative_dotdot_slashes: mkdir_all("b/c/../uid40634-rel/child//", 0o711) => Ok(());
+    uid40634_noop_dotdot_root_prefix: mkdir_all("escape-link1/..//uid40634-root-tree//", 0o711) => Ok(());
+    uid40634_noop_dotdot_target_reentry: mkdir_all("escape-link1/..//target//uid40634-target-tree//", 0o711) => Ok(());
     // Check that trying to create under a file fails.
     nondir_trailing: mkdir_all("b/c/file", 0o711) => Err(ErrorKind::OsError(Some(libc::ENOTDIR)));
     nondir_dotdot: mkdir_all("b/c/file/../d", 0o711) => Err(ErrorKind::OsError(Some(libc::ENOTDIR)));
