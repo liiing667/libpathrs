@@ -349,6 +349,9 @@ impl Root {
     /// This method is just shorthand for calling `readlinkat(2)` on the handle
     /// returned by [`resolve_nofollow`].
     ///
+    /// Like `readlinkat(2)`, this will return `EINVAL` if `path` exists but is
+    /// not a symlink.
+    ///
     /// [`resolve`]: Self::resolve
     /// [`resolve_nofollow`]: Self::resolve_nofollow
     #[doc(alias = "pathrs_inroot_readlink")]
@@ -863,6 +866,9 @@ impl RootRef<'_> {
     ///
     /// This method is just shorthand for calling `readlinkat(2)` on the handle
     /// returned by [`resolve_nofollow`].
+    ///
+    /// Like `readlinkat(2)`, this will return `EINVAL` if `path` exists but is
+    /// not a symlink.
     ///
     /// [`resolve`]: Self::resolve
     /// [`resolve_nofollow`]: Self::resolve_nofollow

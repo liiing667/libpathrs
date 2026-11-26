@@ -42,7 +42,13 @@ use crate::{
 };
 use utils::ExpectedResult;
 
-use std::os::unix::io::{AsFd, AsRawFd};
+use std::{
+    os::unix::{
+        fs::MetadataExt,
+        io::{AsFd, AsRawFd},
+    },
+    path::Path,
+};
 
 use anyhow::{Context, Error};
 use rustix::{io as rustix_io, mount::OpenTreeFlags};
@@ -392,6 +398,59 @@ fn procfs_dead_cached_handle() -> Result<(), Error> {
             "handles created after the cache was invalidated should not be cached"
         );
     }
+    Ok(())
+}
+
+// Regression test for the resolver-first logic in ProcfsHandle::open_follow.
+//
+// /proc/mounts is an ordinary relative symlink ("self/mounts"), not a
+// magic-link. open_follow must resolve it with the safe procfs resolver (which
+// follows every component while enforcing mount checks) rather than assuming
+// that any readlink(2) target is a magic-link and using the unconfined
+// fallback path.
+#[test]
+fn procfs_open_follow_regular_symlink() -> Result<(), Error> {
+    let procfs = ProcfsHandle::new().context("get procfs handle")?;
+
+    let followed = procfs
+        .open_follow(ProcfsBase::ProcRoot, "mounts", OpenFlags::O_RDONLY)
+        .context("open_follow /proc/mounts")?;
+    let direct = procfs
+        .open_follow(ProcfsBase::ProcRoot, "self/mounts", OpenFlags::O_RDONLY)
+        .context("open_follow /proc/self/mounts")?;
+
+    assert_eq!(
+        followed.metadata()?.ino(),
+        direct.metadata()?.ino(),
+        "/proc/mounts should resolve to the same inode as /proc/self/mounts",
+    );
+
+    // Read-only symlink queries must keep returning the regular link target
+    // (rather than an error or a magic-link d_path() target).
+    assert_eq!(
+        procfs
+            .readlink(ProcfsBase::ProcRoot, "mounts")
+            .context("readlink /proc/mounts")?,
+        Path::new("self/mounts"),
+    );
+
+    // A non-symlink target (and a trailing regular symlink with O_NOFOLLOW)
+    // must also go through the normal resolver path.
+    procfs
+        .open_follow(ProcfsBase::ProcSelf, "status", OpenFlags::O_RDONLY)
+        .context("open_follow /proc/self/status")?;
+    let link = procfs
+        .open_follow(
+            ProcfsBase::ProcRoot,
+            "mounts",
+            OpenFlags::O_PATH | OpenFlags::O_NOFOLLOW,
+        )
+        .context("open_follow /proc/mounts with O_PATH|O_NOFOLLOW")?;
+    assert!(
+        link.metadata()?.file_type().is_symlink(),
+        "O_NOFOLLOW should return a handle to the /proc/mounts symlink itself",
+    );
+
     Ok(())
 }
 

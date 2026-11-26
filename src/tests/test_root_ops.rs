@@ -634,7 +634,9 @@ root_op_tests! {
 
     enoent: readlink("non-exist") => Err(ErrorKind::OsError(Some(libc::ENOENT)));
     dir_einval: readlink("b/c") => Err(ErrorKind::OsError(Some(libc::EINVAL)));
+    dir_trailing_slash_einval: readlink("b/c/") => Err(ErrorKind::OsError(Some(libc::EINVAL)));
     file_einval: readlink("b/c/file") => Err(ErrorKind::OsError(Some(libc::EINVAL)));
+    file_trailing_slash_enotdir: readlink("b/c/file/") => Err(ErrorKind::OsError(Some(libc::ENOTDIR)));
     abslink: readlink("e") => Ok("/b/c/d/e");
     rellink: readlink("b-file") => Ok("b/c/file");
     root: readlink("root-link1") => Ok("/");

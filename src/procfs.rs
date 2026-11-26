@@ -501,9 +501,9 @@ impl<'fd> ProcfsHandleRef<'fd> {
     ///  - The final component of the path will be opened with very minimal
     ///    protections. This is necessary because magic-links by design involve
     ///    mountpoint crossings and cannot be confined. This method does verify
-    ///    that the symlink itself doesn't have any overmounts, but this
-    ///    verification is only safe against races for [`ProcfsHandle`]s created
-    ///    by privileged users.
+    ///    that the final component is actually a symlink and that the symlink
+    ///    itself doesn't have any overmounts, but this verification is only
+    ///    safe against races for [`ProcfsHandle`]s created by privileged users.
     ///
     ///  - A trailing `/` at the end of `subpath` implies `O_DIRECTORY`.
     ///
@@ -593,6 +593,36 @@ impl<'fd> ProcfsHandleRef<'fd> {
                 )
             })?;
 
+        // We are about to open the final component with an unconfined
+        // openat(2) -- this is necessary for magic-links (which can cross
+        // mounts by design), but is only acceptable if the trailing component
+        // really is a symlink.
+        //
+        // ELOOP from the resolver trial is *usually* a magic-link, but it can
+        // also be caused by an overmounted non-symlink or by a symlink loop.
+        // Blindly treating such a path as a magic-link would skip all of the
+        // procfs validation and could allow an attacker to redirect the open
+        // into a different mount namespace. Verify the type of the final
+        // component before doing the unconfined open.
+        let trailing_fd = self.openat_raw(
+            parentdir.as_fd(),
+            trailing,
+            OpenFlags::O_PATH | OpenFlags::O_NOFOLLOW,
+        )?;
+        if !trailing_fd
+            .metadata()
+            .wrap("fstat final magiclink component")?
+            .is_symlink()
+        {
+            Err(ErrorImpl::OsError {
+                operation: "open final magiclink component".into(),
+                source: IOError::from_raw_os_error(libc::ELOOP),
+            })
+            .wrap(format!(
+                "final component {trailing:?} is not a symlink but the resolver gave ELOOP",
+            ))?
+        }
+
         // Detect if the magic-link we are about to open is actually a
         // bind-mount. There is no "statfsat" so we can't check that the f_type
         // is PROC_SUPER_MAGIC. However, an attacker can construct any
@@ -602,7 +632,11 @@ impl<'fd> ProcfsHandleRef<'fd> {
         //
         // NOTE: This check is only safe if there are no racing mounts, so only
         // for the ProcfsHandle::{new_fsopen,new_open_tree} cases.
-        verify_same_mnt(self.as_raw_procfs(), parent_mnt_id, &parentdir, trailing).with_wrap(
+        //
+        // We check the O_PATH handle we just opened rather than doing another
+        // path-based lookup, so the mount ID cannot refer to a different inode
+        // than the one we verified above.
+        verify_same_procfs_mnt(self.as_raw_procfs(), parent_mnt_id, &trailing_fd).with_wrap(
             || {
                 format!(
                     "check that parent dir {} and {trailing:?} are on the same procfs mount",

@@ -6,6 +6,18 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased] ##
 
+### Security ###
+- `ProcfsHandle::open_follow` now resolves every subpath with the safe procfs
+  resolver first (including paths whose final component is an ordinary
+  symlink), and only falls back to the unconfined magic-link open path for an
+  `ELOOP` result. The fallback also verifies that the trailing component really
+  is a symlink and that the symlink handle is still on the expected procfs
+  mount before opening it. Previously, a regular symlink (or a non-symlink
+  reached through a racing overmount) could be mistaken for a magic-link and
+  make the lookup skip the procfs mount checks, allowing the open to be
+  redirected into another mount namespace. Ordinary symlinks and read-only
+  `ProcfsHandle::readlink` queries continue to work as before.
+
 ### Added ###
 - Even with `-C panic=abort`, `rust-std` contains code for dealing with
   backtraces which makes our binaries much larger than necessary and the only
@@ -16,6 +28,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
   library has to be rebuilt. See `INSTALL.md` for more details. (#432)
 
 ### Fixed ###
+- `Root::readlink` now explicitly returns `EINVAL` when the target exists but
+  is not a symlink, rather than relying on the kernel's `readlinkat(fd, "")`
+  `ENOENT` asymmetry. Symlink targets and missing-path (`ENOENT`) errors keep
+  their existing behaviour.
 - Due to some unfortunate type usage in `libc` and `rustix`, libpathrs would
   previously fail to build on s390x with musl. We've worked around that issue
   by casting all `f_type` values to `u64` (though [we believe it to be an
